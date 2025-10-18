@@ -1,0 +1,7 @@
+[package]
+name = "mini_ini_parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+file_ref={ git="https://github.com/SuccessfullyFailed/file_ref" }
