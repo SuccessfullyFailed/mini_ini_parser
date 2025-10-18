@@ -12,20 +12,20 @@ pub type IniValueDecoder = &'static dyn Fn(&str) -> String;
 
 
 #[derive(Clone)]
-pub struct IniCore {
+pub struct Ini {
 	data:Vec<IniCategory>,
 	encoder:IniValueEncoder,
 	decoder:IniValueDecoder,
 	source_file:Option<FileRef>
 }
-impl IniCore {
+impl Ini {
 
 	/* CONSTRUCTOR METHODS */
 
 	/// Create a new IniCore from a file.
-	pub fn from_file(path:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<IniCore, Box<dyn Error>> {
+	pub fn from_file(path:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<Ini, Box<dyn Error>> {
 		let source_file:FileRef = FileRef::new(path);
-		Ok(IniCore {
+		Ok(Ini {
 			data: Self::parse_contents(&source_file.read()?, decoder)?,
 			encoder,
 			decoder,
@@ -34,8 +34,8 @@ impl IniCore {
 	}
 
 	/// Create a new IniCore from contents.
-	pub fn from_contents(contents:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<IniCore, Box<dyn Error>> {
-		Ok(IniCore {
+	pub fn from_contents(contents:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<Ini, Box<dyn Error>> {
+		Ok(Ini {
 			data: Self::parse_contents(contents, decoder)?,
 			encoder,
 			decoder,
@@ -126,7 +126,7 @@ impl IniCore {
 		FileRef::new(file_path).write(self.to_string_encoded_values())
 	}
 }
-impl Index<&str> for IniCore {
+impl Index<&str> for Ini {
 	type Output = IniCategory;
 	fn index(&self, target_name:&str) -> &Self::Output {
 		match self.data.iter().position(|variable| &variable.name == target_name) {
@@ -135,7 +135,7 @@ impl Index<&str> for IniCore {
 		}
 	}
 }
-impl IndexMut<&str> for IniCore {
+impl IndexMut<&str> for Ini {
 	fn index_mut(&mut self, target_name:&str) -> &mut Self::Output {
 		match self.data.iter().position(|category| &category.name == target_name) {
 			Some(index) => &mut self.data[index],
