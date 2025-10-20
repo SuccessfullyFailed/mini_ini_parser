@@ -13,7 +13,7 @@ pub type IniValueDecoder = &'static dyn Fn(&str) -> String;
 
 #[derive(Clone)]
 pub struct Ini {
-	data:Vec<IniCategory>,
+	pub categories:Vec<IniCategory>,
 	encoder:IniValueEncoder,
 	decoder:IniValueDecoder,
 	source_file:Option<FileRef>
@@ -26,7 +26,7 @@ impl Ini {
 	pub fn from_file(path:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<Ini, Box<dyn Error>> {
 		let source_file:FileRef = FileRef::new(path);
 		Ok(Ini {
-			data: Self::parse_contents(&source_file.read()?, decoder)?,
+			categories: Self::parse_contents(&source_file.read()?, decoder)?,
 			encoder,
 			decoder,
 			source_file: Some(source_file)
@@ -36,25 +36,11 @@ impl Ini {
 	/// Create a new IniCore from contents.
 	pub fn from_contents(contents:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<Ini, Box<dyn Error>> {
 		Ok(Ini {
-			data: Self::parse_contents(contents, decoder)?,
+			categories: Self::parse_contents(contents, decoder)?,
 			encoder,
 			decoder,
 			source_file: None
 		})
-	}
-
-
-
-	/* PROPERTY GETTER METHODS */
-
-	/// Get all categories.
-	pub fn categories(&self) -> &Vec<IniCategory> {
-		&self.data
-	}
-
-	/// Get a mutable reference all categories.
-	pub fn categories_mut(&mut self) -> &mut Vec<IniCategory> {
-		&mut self.data
 	}
 
 
@@ -110,7 +96,7 @@ impl Ini {
 
 	/// Encode values and parse to string.
 	pub(super) fn to_string_encoded_values(&self) -> String {
-		self.data.iter().filter(|category| category.is_ok()).map(|category| category.to_string_encoded(self.encoder, self.decoder)).collect::<Vec<String>>().join("\n\n")
+		self.categories.iter().filter(|category| category.is_ok()).map(|category| category.to_string_encoded(self.encoder, self.decoder)).collect::<Vec<String>>().join("\n\n")
 	}
 
 	/// Save the changes made to the original file if there is one.
@@ -129,21 +115,26 @@ impl Ini {
 impl Index<&str> for Ini {
 	type Output = IniCategory;
 	fn index(&self, target_name:&str) -> &Self::Output {
-		match self.data.iter().position(|variable| &variable.name == target_name) {
-			Some(index) => &self.data[index],
+		match self.categories.iter().position(|variable| &variable.name == target_name) {
+			Some(index) => &self.categories[index],
 			None => IniCategory::error_instance()
 		}
 	}
 }
 impl IndexMut<&str> for Ini {
 	fn index_mut(&mut self, target_name:&str) -> &mut Self::Output {
-		match self.data.iter().position(|category| &category.name == target_name) {
-			Some(index) => &mut self.data[index],
+		match self.categories.iter().position(|category| &category.name == target_name) {
+			Some(index) => &mut self.categories[index],
 			None => {
-				self.data.push(IniCategory { name: target_name.to_string(), data: Vec::new() });
-				self.data.iter_mut().last().unwrap()
+				self.categories.push(IniCategory { name: target_name.to_string(), data: Vec::new() });
+				self.categories.iter_mut().last().unwrap()
 			}
 		}
+	}
+}
+impl PartialEq for Ini {
+	fn eq(&self, other:&Self) -> bool {
+		self.categories == other.categories
 	}
 }
 

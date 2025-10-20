@@ -24,8 +24,8 @@ mod tests {
 		let contents:&str = "[Category1]\nkey1=value1\nkey2=value2\n\n[Category2]\nkey3=value3\n";
 		let ini:Ini = Ini::from_contents(contents, &simple_encoder, &simple_decoder).unwrap();
 
-		println!("{:?}", ini.categories().iter().map(|c| &c.name).collect::<Vec<&String>>());
-		assert_eq!(ini.categories().len(), 2);
+		println!("{:?}", ini.categories.iter().map(|c| &c.name).collect::<Vec<&String>>());
+		assert_eq!(ini.categories.len(), 2);
 		assert_eq!(ini["Category1"].data.len(), 2);
 		assert_eq!(ini["Category1"]["key1"].value, "value1");
 		assert_eq!(ini["Category2"]["key3"].value, "value3");
@@ -59,7 +59,7 @@ mod tests {
 		let contents:&str = "";
 		let ini:Ini = Ini::from_contents(contents, &simple_encoder, &simple_decoder).unwrap();
 
-		assert_eq!(ini.categories().len(), 0);
+		assert_eq!(ini.categories.len(), 0);
 	}
 
 	#[test]
