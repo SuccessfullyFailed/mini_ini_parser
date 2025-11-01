@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "file_ref"
 version = "0.1.2"
-source = "git+https://github.com/SuccessfullyFailed/file_ref#0c6d9e48ec3ea72a7df5e5b081a7c3332ebf3e9d"
+source = "git+https://github.com/SuccessfullyFailed/file_ref#db4f7a08a8c2967563775bed2436ab6dc355116c"
 
 [[package]]
 name = "mini_ini_parser"
