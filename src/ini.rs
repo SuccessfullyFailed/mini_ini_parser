@@ -87,6 +87,13 @@ impl<ValueType> Ini<ValueType> {
 		self.categories.iter_mut().find(|category| category.name == category_name)
 	}
 
+	/// Create a category if it does not exist.
+	pub fn set_category(&mut self, category_name:&str) {
+		if !self.categories.iter().any(|category| category.name == category_name) {
+			self.categories.push(IniCategory::new(category_name));
+		}
+	}
+
 	/// Try to find a variable in the ini.
 	pub fn get_variable(&self, category_name:&str, variable_name:&str) -> Option<&IniVariable<ValueType>> {
 		self.get_category(category_name).and_then(|category| category.get_variable(variable_name))
@@ -95,6 +102,19 @@ impl<ValueType> Ini<ValueType> {
 	/// Try to find a mutable variable in the ini.
 	pub fn get_variable_mut(&mut self, category_name:&str, variable_name:&str) -> Option<&mut IniVariable<ValueType>> {
 		self.get_category_mut(category_name).and_then(|category| category.get_variable_mut(variable_name))
+	}
+
+	/// Set the value of a variable.
+	/// Creates the category and/or variable if it does not exist.
+	pub fn set_variable(&mut self, category_name:&str, variable_name:&str, variable_value:ValueType) {
+		match self.categories.iter().position(|category| category.name == category_name) {
+			Some(index) => self.categories[index].set_variable(variable_name, variable_value),
+			None => {
+				let mut category = IniCategory::new(category_name);
+				category.set_variable(variable_name, variable_value);
+				self.categories.push(category);
+			}
+		}
 	}
 
 
@@ -163,6 +183,15 @@ impl<ValueType> IniCategory<ValueType> {
 	/// Try to find a mutable variable in the category.
 	pub fn get_variable_mut(&mut self, variable_name:&str) -> Option<&mut IniVariable<ValueType>> {
 		self.variables.iter_mut().find(|variable| variable.name == variable_name)
+	}
+
+	/// Set the value of a variable.
+	/// Creates the variable if it does not exist.
+	pub fn set_variable(&mut self, variable_name:&str, variable_value:ValueType) {
+		match self.variables.iter().position(|variable| variable.name == variable_name) {
+			Some(index) => self.variables[index].value = variable_value,
+			None => self.variables.push(IniVariable::new(variable_name, variable_value))
+		}
 	}
 
 

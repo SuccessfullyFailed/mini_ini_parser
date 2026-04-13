@@ -99,4 +99,13 @@ mod tests {
 
 		assert!(ini.get_variable("Missing", "key").is_none());
 	}
+
+	#[test]
+	fn test_create_variable() {
+		let contents:&str = "[Missing]\n";
+		let mut ini:Ini<String> = Ini::<String>::from_contents(contents);
+		ini.set_variable("NotMissing", "key", "value".to_string());
+
+		assert_eq!(ini.get_variable("NotMissing", "key").unwrap().value, "value");
+	}
 }
