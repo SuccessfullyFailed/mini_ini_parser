@@ -1,61 +1,61 @@
-use std::{ error::Error, ops::{ Index, IndexMut } };
+use std::error::Error;
 use file_ref::FileRef;
 
 
 
 const DEFAULT_DECODER:fn(&str) -> String = |v| v.to_string();
-const DEFAULT_ENCODER:fn(&str) -> String = |v| v.to_string();
-pub trait ValueDecoder:Fn(&str) -> String + Send + Sync + 'static {}
-pub trait ValueEncoder:Fn(&str) -> String + Send + Sync + 'static {}
-impl<T:Fn(&str) -> String + Send + Sync + 'static> ValueDecoder for T {}
-impl<T:Fn(&str) -> String + Send + Sync + 'static> ValueEncoder for T {}
+const DEFAULT_ENCODER:fn(&String) -> String = |v| v.to_string();
+pub trait ValueDecoder<ValueType>:Fn(&str) -> ValueType + Send + Sync + 'static {}
+pub trait ValueEncoder<ValueType>:Fn(&ValueType) -> String + Send + Sync + 'static {}
+impl<ValueType, T:Fn(&str) -> ValueType + Send + Sync + 'static> ValueDecoder<ValueType> for T {}
+impl<ValueType, T:Fn(&ValueType) -> String + Send + Sync + 'static> ValueEncoder<ValueType> for T {}
 
 
 
-pub struct Ini {
-	pub categories:Vec<IniCategory>,
+pub struct Ini<ValueType:'static> {
+	pub categories:Vec<IniCategory<ValueType>>,
 	source_file:Option<FileRef>,
-	value_encoder:Box<dyn ValueEncoder>,
-	_value_decoder:Box<dyn ValueDecoder>
+	_value_decoder:Box<dyn ValueDecoder<ValueType>>,
+	value_encoder:Box<dyn ValueEncoder<ValueType>>
 }
-impl Ini {
+impl<ValueType> Ini<ValueType> {
 
 	/* CONSTRUCTOR METHODS */
 
 	/// Create a new ini from a file.
 	/// Reads the file and parses the file immediately.
-	pub fn from_file(file_path:&str) -> Result<Ini, Box<dyn Error>> {
+	pub fn from_file(file_path:&str) -> Result<Ini<String>, Box<dyn Error>> {
 		Ini::from_file_with_encoding(file_path, DEFAULT_DECODER, DEFAULT_ENCODER)
 	}
 
 	/// Create a new ini from a file and encoding settings.
 	/// Reads the file and parses the file immediately.
-	pub fn from_file_with_encoding<Encoder:ValueEncoder, Decoder:ValueDecoder>(file_path:&str, value_decoder:Decoder, value_encoder:Encoder) -> Result<Ini, Box<dyn Error>> {
+	pub fn from_file_with_encoding<Decoder:ValueDecoder<ValueType>, Encoder:ValueEncoder<ValueType>>(file_path:&str, value_decoder:Decoder, value_encoder:Encoder) -> Result<Self, Box<dyn Error>> {
 		let file:FileRef = FileRef::new(file_path);
 		Ok(
 			Ini {
 				categories: Self::parse_raw_contents(&file.read()?, &value_decoder),
 				source_file: Some(file),
-				value_encoder: Box::new(value_encoder),
-				_value_decoder: Box::new(value_decoder)
+				_value_decoder: Box::new(value_decoder),
+				value_encoder: Box::new(value_encoder)
 			}
 		)
 	}
 
 	/// Create a new ini from raw contents.
 	/// Parses the contents immediately.
-	pub fn from_contents(contents:&str) -> Ini {
+	pub fn from_contents(contents:&str) -> Ini<String> {
 		Ini::from_contents_with_encoding(contents, DEFAULT_DECODER, DEFAULT_ENCODER)
 	}
 
 	/// Create a new ini from raw contents and encoding settings..
 	/// Parses the contents immediately.
-	pub fn from_contents_with_encoding<Encoder:ValueEncoder, Decoder:ValueDecoder>(contents:&str, decoder:Decoder, encoder:Encoder) -> Ini {
+	pub fn from_contents_with_encoding<Decoder:ValueDecoder<ValueType>, Encoder:ValueEncoder<ValueType>>(contents:&str, decoder:Decoder, encoder:Encoder) -> Self {
 		Ini {
 			categories: Self::parse_raw_contents(&contents, &decoder),
 			source_file: None,
-			value_encoder: Box::new(encoder),
-			_value_decoder: Box::new(decoder)
+			_value_decoder: Box::new(decoder),
+			value_encoder: Box::new(encoder)
 		}
 	}
 
@@ -78,22 +78,22 @@ impl Ini {
 	/* GETTER AND SETTER METHODS */
 
 	/// Try to find a category in the ini.
-	pub fn get_category(&self, category_name:&str) -> Option<&IniCategory> {
+	pub fn get_category(&self, category_name:&str) -> Option<&IniCategory<ValueType>> {
 		self.categories.iter().find(|category| category.name == category_name)
 	}
 
 	/// Try to find a mutable category in the ini.
-	pub fn get_category_mut(&mut self, category_name:&str) -> Option<&mut IniCategory> {
+	pub fn get_category_mut(&mut self, category_name:&str) -> Option<&mut IniCategory<ValueType>> {
 		self.categories.iter_mut().find(|category| category.name == category_name)
 	}
 
 	/// Try to find a variable in the ini.
-	pub fn get_variable(&self, category_name:&str, variable_name:&str) -> Option<&IniVariable> {
+	pub fn get_variable(&self, category_name:&str, variable_name:&str) -> Option<&IniVariable<ValueType>> {
 		self.get_category(category_name).and_then(|category| category.get_variable(variable_name))
 	}
 
 	/// Try to find a mutable variable in the ini.
-	pub fn get_variable_mut(&mut self, category_name:&str, variable_name:&str) -> Option<&mut IniVariable> {
+	pub fn get_variable_mut(&mut self, category_name:&str, variable_name:&str) -> Option<&mut IniVariable<ValueType>> {
 		self.get_category_mut(category_name).and_then(|category| category.get_variable_mut(variable_name))
 	}
 
@@ -102,12 +102,12 @@ impl Ini {
 	/* PARSING METHODS */
 
 	/// Parse raw contents into ini categories.
-	fn parse_raw_contents(contents:&str, value_decoder:&dyn ValueEncoder) -> Vec<IniCategory> {
+	fn parse_raw_contents(contents:&str, value_decoder:&dyn Fn(&str) -> ValueType) -> Vec<IniCategory<ValueType>> {
 		const CATEGORY_OPEN:char = '[';
 		const CATEGORY_CLOSE:char = ']';
 		const VAR_SPLITTER:char = '=';
 		
-		let mut categories:Vec<IniCategory> = vec![IniCategory::new("")];
+		let mut categories:Vec<IniCategory<ValueType>> = vec![IniCategory::new("")];
 		for line in contents.split(['\n', '\r']) {
 			let trimmed_line:&str = line.trim();
 			if trimmed_line.is_empty() {
@@ -120,35 +120,14 @@ impl Ini {
 			if let Some(split_index) = line.chars().position(|char| char == VAR_SPLITTER) {
 				let var_name:&str = &line[..split_index];
 				let var_value:&str = &line[split_index + 1..];
-				categories.last_mut().unwrap().variables.push(IniVariable::new(var_name, &value_decoder(var_value)));
+				categories.last_mut().unwrap().variables.push(IniVariable::new(var_name, value_decoder(var_value)));
 			}
 		}
 		categories.retain(|category| !category.variables.is_empty());
 		categories
 	}
 }
-impl Index<&str> for Ini {
-	type Output = IniCategory;
-
-	fn index(&self, category_name:&str) -> &Self::Output {
-		static NONEXISTENT_INI_CATEGORY:IniCategory = IniCategory { name: String::new(), variables: Vec::new() };
-		self.get_category(category_name).unwrap_or(&NONEXISTENT_INI_CATEGORY)
-	}
-}
-impl IndexMut<&str> for Ini {
-	fn index_mut(&mut self, category_name:&str) -> &mut Self::Output {
-		match self.categories.iter().position(|category| category.name == category_name) {
-			Some(index) => {
-				&mut self.categories[index]
-			},
-			None => {
-				self.categories.push(IniCategory::new(category_name));
-				self.categories.last_mut().unwrap()
-			}
-		}
-	}
-}
-impl ToString for Ini {
+impl<ValueType> ToString for Ini<ValueType> {
 	fn to_string(&self) -> String {
 		self.categories.iter().map(|category| category.to_encoded_string(&self.value_encoder)).collect::<Vec<String>>().join("\n\n")
 	}
@@ -156,16 +135,16 @@ impl ToString for Ini {
 
 
 
-pub struct IniCategory {
+pub struct IniCategory<ValueType> {
 	pub name:String,
-	pub variables:Vec<IniVariable>
+	pub variables:Vec<IniVariable<ValueType>>
 }
-impl IniCategory {
+impl<ValueType> IniCategory<ValueType> {
 
 	/* CONSTRUCTOR METHODS */
 
 	/// Create a new category.
-	pub fn new(name:&str) -> IniCategory {
+	pub fn new(name:&str) -> IniCategory<ValueType> {
 		IniCategory {
 			name: name.to_string(),
 			variables: Vec::new()
@@ -177,12 +156,12 @@ impl IniCategory {
 	/* GETTER AND SETTER METHODS */
 
 	/// Try to find a variable in the category.
-	pub fn get_variable(&self, variable_name:&str) -> Option<&IniVariable> {
+	pub fn get_variable(&self, variable_name:&str) -> Option<&IniVariable<ValueType>> {
 		self.variables.iter().find(|variable| variable.name == variable_name)
 	}
 
 	/// Try to find a mutable variable in the category.
-	pub fn get_variable_mut(&mut self, variable_name:&str) -> Option<&mut IniVariable> {
+	pub fn get_variable_mut(&mut self, variable_name:&str) -> Option<&mut IniVariable<ValueType>> {
 		self.variables.iter_mut().find(|variable| variable.name == variable_name)
 	}
 
@@ -191,52 +170,26 @@ impl IniCategory {
 	/* PARSING METHODS */
 
 	/// Turn self into a string with encoded values.
-	pub fn to_encoded_string(&self, value_encoder:&dyn ValueEncoder) -> String {
+	pub fn to_encoded_string(&self, value_encoder:&dyn ValueEncoder<ValueType>) -> String {
 		format!("[{}]\n{}", self.name, self.variables.iter().map(|variable| variable.to_encoded_string(value_encoder)).collect::<Vec<String>>().join("\n"))
 	}
 }
-impl Index<&str> for IniCategory {
-	type Output = IniVariable;
-
-	fn index(&self, variable_name:&str) -> &Self::Output {
-		static NONEXISTENT_INI_VARIABLE:IniVariable = IniVariable { name: String::new(), value: String::new() };
-		self.get_variable(variable_name).unwrap_or(&NONEXISTENT_INI_VARIABLE)
-	}
-}
-impl IndexMut<&str> for IniCategory {
-	fn index_mut(&mut self, variable_name:&str) -> &mut Self::Output {
-		match self.variables.iter().position(|category| category.name == variable_name) {
-			Some(index) => {
-				&mut self.variables[index]
-			},
-			None => {
-				self.variables.push(IniVariable::new(variable_name, ""));
-				self.variables.last_mut().unwrap()
-			}
-		}
-	}
-}
-impl ToString for IniCategory {
-	fn to_string(&self) -> String {
-		format!("[{}]\n{}", self.name, self.variables.iter().map(|variable| variable.to_string()).collect::<Vec<String>>().join("\n"))
-	}
-}
 
 
 
-pub struct IniVariable {
+pub struct IniVariable<ValueType> {
 	pub name:String,
-	pub value:String
+	pub value:ValueType
 }
-impl IniVariable {
+impl<ValueType> IniVariable<ValueType> {
 
 	/* CONSTRUCTOR METHODS */
 
 	/// Create a new variable.
-	pub fn new(name:&str, value:&str) -> IniVariable {
+	pub fn new(name:&str, value:ValueType) -> Self {
 		IniVariable {
 			name: name.to_string(),
-			value: value.to_string()
+			value
 		}
 	}
 
@@ -245,12 +198,7 @@ impl IniVariable {
 	/* PARSING METHODS */
 
 	/// Turn self into a string with encoded values.
-	pub fn to_encoded_string(&self, encoder:&dyn ValueEncoder) -> String {
+	pub fn to_encoded_string(&self, encoder:&dyn ValueEncoder<ValueType>) -> String {
 		format!("{}={}", self.name, encoder(&self.value))
-	}
-}
-impl ToString for IniVariable {
-	fn to_string(&self) -> String {
-		format!("{}={}", self.name, self.value)
 	}
 }
