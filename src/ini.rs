@@ -3,266 +3,254 @@ use file_ref::FileRef;
 
 
 
-const CATEGORY_CHARS:[char; 2] = ['[', ']'];
-const VARIABLE_SPLIT_CHAR:char = '=';
-const UNAVAILABLE_PROPERTY_PLACEHOLDER:&str = "UNAVAILABLE_PROPERTY_ERROR";
-pub type IniValueEncoder = &'static dyn Fn(&str) -> String;
-pub type IniValueDecoder = &'static dyn Fn(&str) -> String;
+const DEFAULT_DECODER:fn(&str) -> String = |v| v.to_string();
+const DEFAULT_ENCODER:fn(&str) -> String = |v| v.to_string();
+pub trait ValueDecoder:Fn(&str) -> String + Send + Sync + 'static {}
+pub trait ValueEncoder:Fn(&str) -> String + Send + Sync + 'static {}
+impl<T:Fn(&str) -> String + Send + Sync + 'static> ValueDecoder for T {}
+impl<T:Fn(&str) -> String + Send + Sync + 'static> ValueEncoder for T {}
 
 
 
-#[derive(Clone)]
 pub struct Ini {
 	pub categories:Vec<IniCategory>,
-	encoder:IniValueEncoder,
-	decoder:IniValueDecoder,
-	source_file:Option<FileRef>
+	source_file:Option<FileRef>,
+	value_encoder:Box<dyn ValueEncoder>,
+	_value_decoder:Box<dyn ValueDecoder>
 }
 impl Ini {
 
 	/* CONSTRUCTOR METHODS */
 
-	/// Create a new IniCore from a file.
-	pub fn from_file(path:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<Ini, Box<dyn Error>> {
-		let source_file:FileRef = FileRef::new(path);
-		Ok(Ini {
-			categories: Self::parse_contents(&source_file.read()?, decoder)?,
-			encoder,
-			decoder,
-			source_file: Some(source_file)
-		})
+	/// Create a new ini from a file.
+	/// Reads the file and parses the file immediately.
+	pub fn from_file(file_path:&str) -> Result<Ini, Box<dyn Error>> {
+		Ini::from_file_with_encoding(file_path, DEFAULT_DECODER, DEFAULT_ENCODER)
 	}
 
-	/// Create a new IniCore from contents.
-	pub fn from_contents(contents:&str, encoder:IniValueEncoder, decoder:IniValueDecoder) -> Result<Ini, Box<dyn Error>> {
-		Ok(Ini {
-			categories: Self::parse_contents(contents, decoder)?,
-			encoder,
-			decoder,
-			source_file: None
-		})
+	/// Create a new ini from a file and encoding settings.
+	/// Reads the file and parses the file immediately.
+	pub fn from_file_with_encoding<Encoder:ValueEncoder, Decoder:ValueDecoder>(file_path:&str, value_decoder:Decoder, value_encoder:Encoder) -> Result<Ini, Box<dyn Error>> {
+		let file:FileRef = FileRef::new(file_path);
+		Ok(
+			Ini {
+				categories: Self::parse_raw_contents(&file.read()?, &value_decoder),
+				source_file: Some(file),
+				value_encoder: Box::new(value_encoder),
+				_value_decoder: Box::new(value_decoder)
+			}
+		)
 	}
 
+	/// Create a new ini from raw contents.
+	/// Parses the contents immediately.
+	pub fn from_contents(contents:&str) -> Ini {
+		Ini::from_contents_with_encoding(contents, DEFAULT_DECODER, DEFAULT_ENCODER)
+	}
 
-
-	/* USAGE METHODS */
-
-	/// Parse some contents to IniCategories.
-	fn parse_contents(contents:&str, decoder:IniValueDecoder) -> Result<Vec<IniCategory>, Box<dyn Error>> {
-
-		// Loop through lines in contents.
-		let mut categories:Vec<IniCategory> = Vec::new();
-		let mut variables:Vec<IniVariable> = Vec::new();
-		let mut current_category_name:String = String::new();
-		for line in contents.replace('\r', "\n").split('\n') {
-			let line:&str = line.trim();
-
-			// Empty line.
-			if line.is_empty() {
-				continue;
-			}
-
-			// New category.
-			else if line.starts_with(CATEGORY_CHARS[0]) && line.ends_with(CATEGORY_CHARS[1]) {
-				if !variables.is_empty() {
-					categories.push(IniCategory::new(&current_category_name, variables));
-				}
-				current_category_name = line[1..line.len() - 1].trim().to_string();
-				variables = Vec::new();
-			}
-			
-			// New variable.
-			else if line.contains(VARIABLE_SPLIT_CHAR) {
-				let raw_var_name:&str = line.split(VARIABLE_SPLIT_CHAR).next().unwrap();
-				let name:&str = raw_var_name.trim();
-				let value:&str = &line[raw_var_name.len() + VARIABLE_SPLIT_CHAR.len_utf8()..];
-				variables.push(IniVariable::new(name, &decoder(value)));
-			}
-
-			// No matches.
-			else {
-				return Err(format!("Could not parse IniCore. Unsupported line: '{line}'").into());
-			}
+	/// Create a new ini from raw contents and encoding settings..
+	/// Parses the contents immediately.
+	pub fn from_contents_with_encoding<Encoder:ValueEncoder, Decoder:ValueDecoder>(contents:&str, decoder:Decoder, encoder:Encoder) -> Ini {
+		Ini {
+			categories: Self::parse_raw_contents(&contents, &decoder),
+			source_file: None,
+			value_encoder: Box::new(encoder),
+			_value_decoder: Box::new(decoder)
 		}
-
-		// Add trailing data.
-		if !variables.is_empty() {
-			categories.push(IniCategory::new(&current_category_name, variables));
-		}
-
-		// Return parsed categories.
-		Ok(categories)
 	}
 
-	/// Encode values and parse to string.
-	pub(super) fn to_string_encoded_values(&self) -> String {
-		self.categories.iter().filter(|category| category.is_ok()).map(|category| category.to_string_encoded(self.encoder, self.decoder)).collect::<Vec<String>>().join("\n\n")
+	/// Save the ini to a specific file path.
+	pub fn save_to_file(&self, file_path:&str) -> Result<(), Box<dyn Error>> {
+		FileRef::new(file_path).write(self.to_string())
 	}
 
-	/// Save the changes made to the original file if there is one.
+	/// Save the ini to the file path it originally came from.
+	/// Will return an error if the ini did not come from a file.
 	pub fn save_changes(&self) -> Result<(), Box<dyn Error>> {
 		match &self.source_file {
-			Some(file) => file.write(self.to_string_encoded_values()),
-			None => Err("Could not save changes to midi, midi did not come from a file. Please use 'save_to_file' instead.".into())
+			Some(file) => file.write(self.to_string()),
+			None => Err("Could not safe ini to origin file, ini did not come from a file.".into())
 		}
 	}
 
-	/// Save the ini to the specified file.
-	pub fn save_to_file(&self, file_path:&str) -> Result<(), Box<dyn Error>> {
-		FileRef::new(file_path).write(self.to_string_encoded_values())
+
+
+	/* GETTER AND SETTER METHODS */
+
+	/// Try to find a category in the ini.
+	pub fn get_category(&self, category_name:&str) -> Option<&IniCategory> {
+		self.categories.iter().find(|category| category.name == category_name)
+	}
+
+	/// Try to find a mutable category in the ini.
+	pub fn get_category_mut(&mut self, category_name:&str) -> Option<&mut IniCategory> {
+		self.categories.iter_mut().find(|category| category.name == category_name)
+	}
+
+	/// Try to find a variable in the ini.
+	pub fn get_variable(&self, category_name:&str, variable_name:&str) -> Option<&IniVariable> {
+		self.get_category(category_name).and_then(|category| category.get_variable(variable_name))
+	}
+
+	/// Try to find a mutable variable in the ini.
+	pub fn get_variable_mut(&mut self, category_name:&str, variable_name:&str) -> Option<&mut IniVariable> {
+		self.get_category_mut(category_name).and_then(|category| category.get_variable_mut(variable_name))
+	}
+
+
+
+	/* PARSING METHODS */
+
+	/// Parse raw contents into ini categories.
+	fn parse_raw_contents(contents:&str, value_decoder:&dyn ValueEncoder) -> Vec<IniCategory> {
+		const CATEGORY_OPEN:char = '[';
+		const CATEGORY_CLOSE:char = ']';
+		const VAR_SPLITTER:char = '=';
+		
+		let mut categories:Vec<IniCategory> = vec![IniCategory::new("")];
+		for line in contents.split(['\n', '\r']) {
+			let trimmed_line:&str = line.trim();
+			if trimmed_line.is_empty() {
+				continue;
+			}
+			if trimmed_line.starts_with(CATEGORY_OPEN) && trimmed_line.ends_with(CATEGORY_CLOSE) {
+				let category_name:&str = &trimmed_line[1..trimmed_line.len() - 1];
+				categories.push(IniCategory::new(category_name));
+			}
+			if let Some(split_index) = line.chars().position(|char| char == VAR_SPLITTER) {
+				let var_name:&str = &line[..split_index];
+				let var_value:&str = &line[split_index + 1..];
+				categories.last_mut().unwrap().variables.push(IniVariable::new(var_name, &value_decoder(var_value)));
+			}
+		}
+		categories.retain(|category| !category.variables.is_empty());
+		categories
 	}
 }
 impl Index<&str> for Ini {
 	type Output = IniCategory;
-	fn index(&self, target_name:&str) -> &Self::Output {
-		match self.categories.iter().position(|variable| &variable.name == target_name) {
-			Some(index) => &self.categories[index],
-			None => IniCategory::error_instance()
-		}
+
+	fn index(&self, category_name:&str) -> &Self::Output {
+		static NONEXISTENT_INI_CATEGORY:IniCategory = IniCategory { name: String::new(), variables: Vec::new() };
+		self.get_category(category_name).unwrap_or(&NONEXISTENT_INI_CATEGORY)
 	}
 }
 impl IndexMut<&str> for Ini {
-	fn index_mut(&mut self, target_name:&str) -> &mut Self::Output {
-		match self.categories.iter().position(|category| &category.name == target_name) {
-			Some(index) => &mut self.categories[index],
+	fn index_mut(&mut self, category_name:&str) -> &mut Self::Output {
+		match self.categories.iter().position(|category| category.name == category_name) {
+			Some(index) => {
+				&mut self.categories[index]
+			},
 			None => {
-				self.categories.push(IniCategory { name: target_name.to_string(), data: Vec::new() });
-				self.categories.iter_mut().last().unwrap()
+				self.categories.push(IniCategory::new(category_name));
+				self.categories.last_mut().unwrap()
 			}
 		}
 	}
 }
-impl PartialEq for Ini {
-	fn eq(&self, other:&Self) -> bool {
-		self.categories == other.categories
+impl ToString for Ini {
+	fn to_string(&self) -> String {
+		self.categories.iter().map(|category| category.to_encoded_string(&self.value_encoder)).collect::<Vec<String>>().join("\n\n")
 	}
 }
 
 
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IniCategory {
 	pub name:String,
-	pub data:Vec<IniVariable>
+	pub variables:Vec<IniVariable>
 }
 impl IniCategory {
 
 	/* CONSTRUCTOR METHODS */
 
-	/// Create a new empty IniCategory.
-	pub fn empty(name:&str) -> IniCategory {
-		IniCategory::new(name, Vec::new())
-	}
-
-	/// Create a new IniCategory.
-	pub fn new(name:&str, variables:Vec<IniVariable>) -> IniCategory {
-		if name == UNAVAILABLE_PROPERTY_PLACEHOLDER {
-			panic!("'{UNAVAILABLE_PROPERTY_PLACEHOLDER}' should not be used for an ini category name. This string is reserved for incorrect property fetching.");
-		}
+	/// Create a new category.
+	pub fn new(name:&str) -> IniCategory {
 		IniCategory {
 			name: name.to_string(),
-			data: variables
-		}
-	}
-
-	/// Get the error IniCategory. Used for when an ini category is expected, but not available.
-	#[allow(static_mut_refs)]
-	pub fn error_instance() -> &'static IniCategory {
-		unsafe {
-			static mut INVALID_RETURN:Option<IniCategory> = None;
-			match INVALID_RETURN.as_ref() {
-				Some(ini_var) => ini_var,
-				None => {
-					INVALID_RETURN = Some(IniCategory { name: String::from(UNAVAILABLE_PROPERTY_PLACEHOLDER), data: Vec::new()});
-					Self::error_instance()
-				}
-			}
+			variables: Vec::new()
 		}
 	}
 
 
 
-	/* PROPERTY GETTER METHODS */
+	/* GETTER AND SETTER METHODS */
 
-	/// Check if the gotten variable is ok, not the error category.
-	pub fn is_ok(&self) -> bool {
-		self.name != UNAVAILABLE_PROPERTY_PLACEHOLDER && !self.data.is_empty()
+	/// Try to find a variable in the category.
+	pub fn get_variable(&self, variable_name:&str) -> Option<&IniVariable> {
+		self.variables.iter().find(|variable| variable.name == variable_name)
 	}
 
-	/// Encode values and parse to string.
-	pub(super) fn to_string_encoded(&self, encoder:IniValueEncoder, decoder:IniValueDecoder) -> String {
-		format!("{}{}{}\n{}", CATEGORY_CHARS[0], self.name, CATEGORY_CHARS[1], self.data.iter().filter(|variable| variable.is_ok()).map(|variable| variable.to_string_encoded(encoder, decoder)).collect::<Vec<String>>().join("\n"))
+	/// Try to find a mutable variable in the category.
+	pub fn get_variable_mut(&mut self, variable_name:&str) -> Option<&mut IniVariable> {
+		self.variables.iter_mut().find(|variable| variable.name == variable_name)
+	}
+
+
+
+	/* PARSING METHODS */
+
+	/// Turn self into a string with encoded values.
+	pub fn to_encoded_string(&self, value_encoder:&dyn ValueEncoder) -> String {
+		format!("[{}]\n{}", self.name, self.variables.iter().map(|variable| variable.to_encoded_string(value_encoder)).collect::<Vec<String>>().join("\n"))
 	}
 }
 impl Index<&str> for IniCategory {
 	type Output = IniVariable;
-	fn index(&self, target_name:&str) -> &Self::Output {
-		match self.data.iter().position(|variable| &variable.name == target_name) {
-			Some(index) => &self.data[index],
-			None => IniVariable::error_instance()
-		}
+
+	fn index(&self, variable_name:&str) -> &Self::Output {
+		static NONEXISTENT_INI_VARIABLE:IniVariable = IniVariable { name: String::new(), value: String::new() };
+		self.get_variable(variable_name).unwrap_or(&NONEXISTENT_INI_VARIABLE)
 	}
 }
 impl IndexMut<&str> for IniCategory {
-	fn index_mut(&mut self, target_name:&str) -> &mut Self::Output {
-		match self.data.iter().position(|variable| &variable.name == target_name) {
-			Some(index) => &mut self.data[index],
+	fn index_mut(&mut self, variable_name:&str) -> &mut Self::Output {
+		match self.variables.iter().position(|category| category.name == variable_name) {
+			Some(index) => {
+				&mut self.variables[index]
+			},
 			None => {
-				self.data.push(IniVariable::new(target_name, ""));
-				self.data.iter_mut().last().unwrap()
+				self.variables.push(IniVariable::new(variable_name, ""));
+				self.variables.last_mut().unwrap()
 			}
 		}
 	}
 }
+impl ToString for IniCategory {
+	fn to_string(&self) -> String {
+		format!("[{}]\n{}", self.name, self.variables.iter().map(|variable| variable.to_string()).collect::<Vec<String>>().join("\n"))
+	}
+}
 
 
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IniVariable {
 	pub name:String,
 	pub value:String
 }
 impl IniVariable {
-	
+
 	/* CONSTRUCTOR METHODS */
 
-	/// Create a new IniVariable.
+	/// Create a new variable.
 	pub fn new(name:&str, value:&str) -> IniVariable {
-		if name == UNAVAILABLE_PROPERTY_PLACEHOLDER {
-			panic!("'{UNAVAILABLE_PROPERTY_PLACEHOLDER}' should not be used for an ini variable name. This string is reserved for incorrect property fetching.");
-		}
 		IniVariable {
 			name: name.to_string(),
 			value: value.to_string()
 		}
 	}
 
-	/// Get the error IniVariable. Used for when an ini variable is expected, but not available.
-	#[allow(static_mut_refs)]
-	pub fn error_instance() -> &'static IniVariable {
-		unsafe {
-			static mut INVALID_RETURN:Option<IniVariable> = None;
-			match INVALID_RETURN.as_ref() {
-				Some(ini_var) => ini_var,
-				None => {
-					INVALID_RETURN = Some(IniVariable { name: String::from(UNAVAILABLE_PROPERTY_PLACEHOLDER), value: String::from(UNAVAILABLE_PROPERTY_PLACEHOLDER) });
-					Self::error_instance()
-				}
-			}
-		}
+
+
+	/* PARSING METHODS */
+
+	/// Turn self into a string with encoded values.
+	pub fn to_encoded_string(&self, encoder:&dyn ValueEncoder) -> String {
+		format!("{}={}", self.name, encoder(&self.value))
 	}
-
-
-
-	/* PROPERTY GETTER METHODS */
-
-	/// Check if the gotten variable is ok, not the error variable.
-	pub fn is_ok(&self) -> bool {
-		self.name != UNAVAILABLE_PROPERTY_PLACEHOLDER && !self.value.is_empty()
-	}
-
-	/// Encode values and parse to string.
-	pub(super) fn to_string_encoded(&self, encoder:IniValueEncoder, decoder:IniValueDecoder) -> String {
-		format!("{}{}{}", self.name, VARIABLE_SPLIT_CHAR, encoder(&decoder(&self.value)))
+}
+impl ToString for IniVariable {
+	fn to_string(&self) -> String {
+		format!("{}={}", self.name, self.value)
 	}
 }

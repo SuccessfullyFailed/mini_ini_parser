@@ -9,7 +9,7 @@ source = "git+https://github.com/SuccessfullyFailed/file_ref#db4f7a08a8c29675637
 
 [[package]]
 name = "mini_ini_parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "file_ref",
 ]
