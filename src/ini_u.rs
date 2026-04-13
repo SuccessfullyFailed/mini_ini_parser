@@ -108,4 +108,16 @@ mod tests {
 
 		assert_eq!(ini.get_variable("NotMissing", "key").unwrap().value, "value");
 	}
+
+	#[test]
+	fn test_generic_type() {
+		let contents:&str = "[Category1]\nkey1=1\nkey2=2\n\n[Category2]\nkey3=3\n";
+		let ini:Ini<usize> = Ini::<usize>::from_contents_with_encoding(contents, |value| value.parse::<usize>().unwrap(), usize::to_string);
+
+		println!("{:?}", ini.categories.iter().map(|c| &c.name).collect::<Vec<&String>>());
+		assert_eq!(ini.categories.len(), 2);
+		assert_eq!(ini.get_category("Category1").unwrap().variables.len(), 2);
+		assert_eq!(ini.get_variable("Category1", "key1").unwrap().value, 1);
+		assert_eq!(ini.get_variable("Category2", "key3").unwrap().value, 3);
+	}
 }
