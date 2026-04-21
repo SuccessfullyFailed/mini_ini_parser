@@ -91,14 +91,20 @@ impl<NameType, ValueType> Ini<NameType, ValueType> {
 	}
 
 	/// Try to find a mutable category in the ini.
+	/// Does not create the category if it does not exist.
 	pub fn get_category_mut(&mut self, category_name:&str) -> Option<&mut IniCategory<NameType, ValueType>> {
-		self.categories.iter_mut().find(|category| category.name == category_name)
+		self.categories.iter_mut().find(|category: &&mut IniCategory<NameType, ValueType>| category.name == category_name)
 	}
 
-	/// Create a category if it does not exist.
-	pub fn set_category(&mut self, category_name:&str) {
-		if !self.categories.iter().any(|category| category.name == category_name) {
-			self.categories.push(IniCategory::new(category_name));
+	/// Find a mutable category in the ini.
+	/// Creates the category if it does not exist.
+	pub fn get_or_create_category_mut(&mut self, category_name:&str) -> &mut IniCategory<NameType, ValueType> {
+		match self.categories.iter().position(|category| category.name == category_name) {
+			Some(category_index) => &mut self.categories[category_index],
+			None => {
+				self.categories.push(IniCategory::new(category_name));
+				self.categories.last_mut().unwrap()
+			}
 		}
 	}
 
@@ -108,8 +114,15 @@ impl<NameType, ValueType> Ini<NameType, ValueType> {
 	}
 
 	/// Try to find a mutable variable in the ini.
+	/// Does not create the variable if it does not exist.
 	pub fn get_variable_mut<Name>(&mut self, category_name:&str, variable_name:Name) -> Option<&mut IniVariable<NameType, ValueType>> where NameType:PartialEq<Name> {
 		self.get_category_mut(category_name).and_then(|category| category.get_variable_mut(variable_name))
+	}
+
+	/// Try to find a mutable variable in the ini.
+	/// Creates the variable if it does not exist.
+	pub fn get_or_create_variable_mut<Name, Value>(&mut self, category_name:&str, variable_name:Name, variable_initial_value:Value) -> &mut IniVariable<NameType, ValueType> where NameType:PartialEq<Name> + From<Name>, ValueType:From<Value> {
+		self.get_or_create_category_mut(category_name).get_or_create_variable_mut(variable_name, variable_initial_value)
 	}
 
 	/// Set the value of a variable.
@@ -194,8 +207,21 @@ impl<NameType, ValueType> IniCategory<NameType, ValueType> {
 	}
 
 	/// Try to find a mutable variable in the category.
+	/// Does not create the variable if it does not exist.
 	pub fn get_variable_mut<Name>(&mut self, variable_name:Name) -> Option<&mut IniVariable<NameType, ValueType>> where NameType:PartialEq<Name> {
 		self.variables.iter_mut().find(|variable| variable.name == variable_name)
+	}
+
+	/// Try to find a mutable variable in the category.
+	/// Creates the variable if it does not exist.
+	pub fn get_or_create_variable_mut<Name, Value>(&mut self, variable_name:Name, variable_initial_value:Value) -> &mut IniVariable<NameType, ValueType> where NameType:PartialEq<Name> + From<Name>, ValueType:From<Value> {
+		match self.variables.iter().position(|variable| variable.name == variable_name) {
+			Some(variable_index) => &mut self.variables[variable_index],
+			None => {
+				self.variables.push(IniVariable::new(variable_name, ValueType::from(variable_initial_value)));
+				self.variables.last_mut().unwrap()
+			}
+		}
 	}
 
 	/// Set the value of a variable.
