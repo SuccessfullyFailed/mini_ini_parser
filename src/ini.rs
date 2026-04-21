@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fmt::Debug};
 use file_ref::FileRef;
 
 
@@ -152,6 +152,11 @@ impl<ValueType> ToString for Ini<ValueType> {
 		self.categories.iter().map(|category| category.to_encoded_string(&self.value_encoder)).collect::<Vec<String>>().join("\n\n")
 	}
 }
+impl<ValueType:Debug> Debug for Ini<ValueType> {
+	fn fmt(&self, f:&mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.categories.iter().map(|category| format!("{:?}", category)).collect::<Vec<String>>().join("\n\n"))
+	}
+}
 
 
 
@@ -203,6 +208,11 @@ impl<ValueType> IniCategory<ValueType> {
 		format!("[{}]\n{}", self.name, self.variables.iter().map(|variable| variable.to_encoded_string(value_encoder)).collect::<Vec<String>>().join("\n"))
 	}
 }
+impl<ValueType:Debug> Debug for IniCategory<ValueType> {
+	fn fmt(&self, f:&mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "[{}]\n{}", self.name, self.variables.iter().map(|variable| format!("{:?}", variable)).collect::<Vec<String>>().join("\n"))
+	}
+}
 
 
 
@@ -229,5 +239,10 @@ impl<ValueType> IniVariable<ValueType> {
 	/// Turn self into a string with encoded values.
 	pub fn to_encoded_string(&self, encoder:&dyn ValueEncoder<ValueType>) -> String {
 		format!("{}={}", self.name, encoder(&self.value))
+	}
+}
+impl<ValueType:Debug> Debug for IniVariable<ValueType> {
+	fn fmt(&self, f:&mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}={:?}", self.name, self.value)
 	}
 }

@@ -111,7 +111,7 @@ mod tests {
 
 	#[test]
 	fn test_generic_type() {
-		let contents:&str = "[Category1]\nkey1=1\nkey2=2\n\n[Category2]\nkey3=3\n";
+		let contents:&str = "[Category1]\nkey1=1\nkey2=2\n\n[Category2]\nkey3=3";
 		let ini:Ini<usize> = Ini::<usize>::from_contents_with_encoding(contents, |value| value.parse::<usize>().unwrap(), usize::to_string);
 
 		println!("{:?}", ini.categories.iter().map(|c| &c.name).collect::<Vec<&String>>());
@@ -119,5 +119,17 @@ mod tests {
 		assert_eq!(ini.get_category("Category1").unwrap().variables.len(), 2);
 		assert_eq!(ini.get_variable("Category1", "key1").unwrap().value, 1);
 		assert_eq!(ini.get_variable("Category2", "key3").unwrap().value, 3);
+	}
+
+	#[test]
+	fn test_debug_print() {
+		let contents:&str = "[Category1]\nkey1=0\nkey2=1,2\n\n[Category2]\nkey3=3,4\n";
+		let ini:Ini<Vec<usize>> = Ini::<Vec<usize>>::from_contents_with_encoding(
+			contents,
+			|value| value.split(',').map(|number| number.parse::<usize>().unwrap()).collect::<Vec<usize>>(),
+			|numbers| numbers.iter().map(|number| number.to_string()).collect::<Vec<String>>().join(", ")
+		);
+
+		assert_eq!(&format!("{:?}", ini), "[Category1]\nkey1=[0]\nkey2=[1, 2]\n\n[Category2]\nkey3=[3, 4]");
 	}
 }
