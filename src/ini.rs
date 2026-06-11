@@ -14,7 +14,7 @@ impl<ValueType, T:Fn(&ValueType) -> String + Send + Sync + 'static> IniEncoder<V
 
 
 
-pub struct Ini<NameType:'static,ValueType:'static> {
+pub struct Ini<NameType:'static=String, ValueType:'static=String> {
 	pub categories:Vec<IniCategory<NameType, ValueType>>,
 	source_file:Option<FileRef>,
 	_name_decoder:Box<dyn IniDecoder<NameType>>,
@@ -22,7 +22,7 @@ pub struct Ini<NameType:'static,ValueType:'static> {
 	_value_decoder:Box<dyn IniDecoder<ValueType>>,
 	value_encoder:Box<dyn IniEncoder<ValueType>>
 }
-impl<NameType, ValueType> Ini<NameType, ValueType> {
+impl Ini<String, String> {
 
 	/* CONSTRUCTOR METHODS */
 
@@ -31,6 +31,16 @@ impl<NameType, ValueType> Ini<NameType, ValueType> {
 	pub fn from_file(file_path:&str) -> Result<Ini<String, String>, Box<dyn Error>> {
 		Ini::from_file_with_encoding(file_path, DEFAULT_NAME_DECODER, DEFAULT_NAME_ENCODER, DEFAULT_VALUE_DECODER, DEFAULT_VALUE_ENCODER)
 	}
+
+	/// Create a new ini from raw contents.
+	/// Parses the contents immediately.
+	pub fn from_contents(contents:&str) -> Ini<String, String> {
+		Ini::from_contents_with_encoding(contents, DEFAULT_NAME_DECODER, DEFAULT_NAME_ENCODER, DEFAULT_VALUE_DECODER, DEFAULT_VALUE_ENCODER)
+	}
+}
+impl<NameType, ValueType> Ini<NameType, ValueType> {
+
+	/* CONSTRUCTOR METHODS */
 
 	/// Create a new ini from a file and encoding settings.
 	/// Reads the file and parses the file immediately.
@@ -46,12 +56,6 @@ impl<NameType, ValueType> Ini<NameType, ValueType> {
 				value_encoder: Box::new(value_encoder)
 			}
 		)
-	}
-
-	/// Create a new ini from raw contents.
-	/// Parses the contents immediately.
-	pub fn from_contents(contents:&str) -> Ini<String, String> {
-		Ini::from_contents_with_encoding(contents, DEFAULT_NAME_DECODER, DEFAULT_NAME_ENCODER, DEFAULT_VALUE_DECODER, DEFAULT_VALUE_ENCODER)
 	}
 
 	/// Create a new ini from raw contents and encoding settings..
@@ -181,7 +185,7 @@ impl<NameType:Debug, ValueType:Debug> Debug for Ini<NameType, ValueType> {
 
 
 
-pub struct IniCategory<NameType, ValueType> {
+pub struct IniCategory<NameType=String, ValueType=String> {
 	pub name:String,
 	pub variables:Vec<IniVariable<NameType, ValueType>>
 }
@@ -250,7 +254,7 @@ impl<NameType:Debug, ValueType:Debug> Debug for IniCategory<NameType, ValueType>
 
 
 
-pub struct IniVariable<NameType, ValueType> {
+pub struct IniVariable<NameType=String, ValueType=String> {
 	pub name:NameType,
 	pub value:ValueType
 }
